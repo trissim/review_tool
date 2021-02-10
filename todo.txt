@@ -1,0 +1,4 @@
+- filter by more than one keyword per column
+- if only one species, no conversion.
+- if more than one, need to specify which to convert to,
+	otherwise, give error
