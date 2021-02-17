@@ -3,6 +3,7 @@ import pandas as pd
 import argparse
 import math
 import os.path as osp
+import mygene
 
 def parse_args():
     parser = argparse.ArgumentParser(description="compare RNA-Seq results")
@@ -53,8 +54,35 @@ def add_sheets(master_sheet,prefix):
     all_sheets = list(filter(None,all_sheets))
     return all_sheets
 
+def count_species(master_sheet):
+    unique_species = set(master_sheet['species'])
+    if unique_species > 1:
+        most_species = ""
+        max_count = 0
+        for specie in unique_species:
+             count = list(master_sheet['species']).count(v)
+             if count > max_count:
+                 max_count = count
+                 most_species = specie
+
+def class_sheet_by_species(master_sheet):
+    sheets_by_species = {}
+#    for i,row in master_sheet.iterrows():
+#        if 
+#        sheets_by_species['
+
+
+
+def convert_gene_name(gene_name,origin_species,target_species):
+        results = mg.query(gene_name,species=origin_species,fields="homologene",size=1)
+        homologues = results['hits'][0]['homologene']['genes']
+        homologues = [tup for tup in homologues if tup[0] == species_id[target_species]]
+        if homologues > 0:
+            return mg.get_gene(homologene[0][1])['symbol']
+        else: return None
+
+
 def main():
-    #pu.db
     args = parse_args()
     master_sheet = pd.read_excel(args.master_sheet)
     master_sheet = filter_master_sheet(master_sheet,args)
