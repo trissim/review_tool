@@ -1,9 +1,15 @@
 from manager import dataset, merge_datasets
+import pudb
 import pandas as pd
 import argparse
 import math
 import os.path as osp
 import mygene
+import sys
+
+mg = mygene.MyGeneInfo()
+species_id = {"human":9606,"rat":10116, "mouse":10090}
+converted_genes_id = {"human":{},"rat":{},"mouse":{}}
 
 def parse_args():
     parser = argparse.ArgumentParser(description="compare RNA-Seq results")
@@ -12,6 +18,7 @@ def parse_args():
     parser.add_argument("-d","--disease",nargs="*",help="filter by disease/model")
     parser.add_argument("-s","--stage",nargs="*",help="filter by stage of disease/model")
     parser.add_argument("-c","--cell",nargs="*",help="filter by cell type")
+    parser.add_argument("-C","--convert",nargs="*",help="organism name to convert gene symbols to")
     parser.add_argument("-t","--tissue",nargs="*",help="filter by tissue")
     parser.add_argument("-p","--species",nargs="*",help="filter by species")
     parser.add_argument("-o","--output",required=True,help="output file name")
@@ -48,37 +55,92 @@ def add_sheet(index,prefix):
         return None
 
 def add_sheets(master_sheet,prefix):
-    all_sheets = []
+    all_sheets = {}
     for i ,row in master_sheet.iterrows():
-        all_sheets.append(add_sheet(int(row['Index']),prefix))
-    all_sheets = list(filter(None,all_sheets))
+        specie = class_sheet_by_species(row)
+        if not specie is None:
+            if not specie in all_sheets.keys():
+                all_sheets[specie] = []
+            sheet = add_sheet(int(row['Index']),prefix)
+            if not sheet is None:
+                all_sheets[specie].append(sheet)
     return all_sheets
 
-def count_species(master_sheet):
-    unique_species = set(master_sheet['species'])
-    if unique_species > 1:
-        most_species = ""
-        max_count = 0
-        for specie in unique_species:
-             count = list(master_sheet['species']).count(v)
-             if count > max_count:
-                 max_count = count
-                 most_species = specie
+def class_sheet_by_species(master_sheet_row):
+    #pu.db
+    species = master_sheet_row['Species']
+    if not type(species) is str: return None
+    if "human" in species: return "human"
+    if "mouse" in species: return "mouse"
+    if "rat" in species: return "rat"
+    return None
 
-def class_sheet_by_species(master_sheet):
-    sheets_by_species = {}
-#    for i,row in master_sheet.iterrows():
-#        if 
-#        sheets_by_species['
+def convert_all_sheets_to_species(all_sheets,target_species):
+    converted = []
+    for origin_species,sheet_list in all_sheets.items():
+        if not target_species == origin_species:
+            all_genes = []
+            for sheet in sheet_list:
+                all_genes+=(sheet.df['Gene ID'].tolist())
+            all_genes = set(all_genes)
+            converted_genes_entrezid = convert_genes_to_entrezids(all_genes,origin_species,target_species)
+            entrezids_to_geneids = convert_entrezids_to_gene_ids(list(converted_genes_entrezid.values()))
+            converted += convert_sheet_list_to_species(sheet_list,converted_genes_entrezid,entrezids_to_geneids)
+    return converted
+
+def convert_entrezids_to_gene_ids(entrezids):
+    results = mg.getgenes(entrezids)
+    entrezid_to_geneid = {}
+    for result in results:
+        if 'notfound' in result.keys():
+            entrezid_to_geneid[result["query"]] = None
+        else:
+            entrezid_to_geneid[result["query"]] = result['symbol']
+    return entrezid_to_geneid
+
+def convert_genes_to_entrezids(gene_names,origin_species,target_species):
+    converted_genes_id = {}
+    results = mg.querymany(gene_names,species=origin_species,fields="homologene",scopes="symbol")
+    for result, gene_name in zip (results,gene_names):
+        converted_id = None
+        homologues = None
+        if not "notfound" in result.keys():
+            if 'homologene' in result.keys():
+                homologues = result['homologene']['genes']
+            if not homologues is None:
+                homologues = [tup for tup in homologues if tup[0] == species_id[target_species]]
+                if len(homologues) > 0:
+                    converted_id = homologues[0][1]
+        converted_genes_id[gene_name] = converted_id
+    return converted_genes_id
 
 
+def convert_sheet_list_to_species(sheets,converted_genes_to_entrezid,entrezids_to_geneids):
+    converted_sheets = []
+    for sheet in sheets:
+        for i, row in sheet.df.iterrows():
+            to_remove = []
+            entrezid = converted_genes_to_entrezid[row["Gene ID"]]
+            if entrezid is None or not entrezid in entrezids_to_geneids.keys():
+                print("missing",entrezid)
+                to_remove.append(i)
+            else:
+                converted_symbol = entrezids_to_geneids[entrezid]
+                sheet.df.loc[i, 'Gene'] = gene_name
+        sheet.df = sheet.df.drop(to_remove)
+        converted_sheets.append(sheet)
+    return converted_sheets
 
 def convert_gene_name(gene_name,origin_species,target_species):
-        results = mg.query(gene_name,species=origin_species,fields="homologene",size=1)
-        homologues = results['hits'][0]['homologene']['genes']
+        hits = results['hits']
+        if len(hits) > 0:
+            if 'homologene' in hits:
+                homologues = hits[0]['homologene']['genes']
+            else: return None
+        else: return None
         homologues = [tup for tup in homologues if tup[0] == species_id[target_species]]
-        if homologues > 0:
-            return mg.get_gene(homologene[0][1])['symbol']
+        if len(homologues) > 0:
+            return mg.getgene(homologues[0][1])['symbol']
         else: return None
 
 
@@ -87,6 +149,10 @@ def main():
     master_sheet = pd.read_excel(args.master_sheet)
     master_sheet = filter_master_sheet(master_sheet,args)
     all_sheets = add_sheets(master_sheet,args.excels_path)
+    if len(all_sheets.keys()) > 1:
+        if not args.convert:
+            sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
+        all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
     merged = merge_datasets(all_sheets)
     merged.to_csv(args.output)
 
