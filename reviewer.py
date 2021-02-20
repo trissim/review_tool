@@ -1,5 +1,4 @@
 from manager import dataset, merge_datasets
-import pudb
 import pandas as pd
 import argparse
 import math
@@ -21,6 +20,8 @@ def parse_args():
     parser.add_argument("-C","--convert",nargs="*",help="organism name to convert gene symbols to")
     parser.add_argument("-t","--tissue",nargs="*",help="filter by tissue")
     parser.add_argument("-p","--species",nargs="*",help="filter by species")
+    parser.add_argument("--percent", default=1, help="fiter by minimum percent of papers that have the same gene")
+    parser.add_argument("--absolute",help="filter by minimum number of papers that have the same gene")
     parser.add_argument("-o","--output",required=True,help="output file name")
     return parser.parse_args()
 
@@ -67,7 +68,6 @@ def add_sheets(master_sheet,prefix):
     return all_sheets
 
 def class_sheet_by_species(master_sheet_row):
-    #pu.db
     species = master_sheet_row['Species']
     if not type(species) is str: return None
     if "human" in species: return "human"
@@ -143,6 +143,21 @@ def convert_gene_name(gene_name,origin_species,target_species):
             return mg.getgene(homologues[0][1])['symbol']
         else: return None
 
+def num_percent_common(series):
+    total = len(series)-1
+    remain = len(series.dropna())-1
+    return remain, float(remain)/float(total)
+
+def filter_min_row(final_csv,min_val,absolute=False):
+    to_remove = []
+    for i, row in final_csv.iterrows():
+        remain, percent = num_percent_common(row)
+        if absolute:
+            if not min_val <= remain: to_remove.append(i)
+        else:
+            if not min_val <= percent: to_remove.append(i)
+    final_csv = final_csv.drop(to_remove)
+    return final_csv
 
 def main():
     args = parse_args()
@@ -154,6 +169,11 @@ def main():
             sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
         all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
     merged = merge_datasets(all_sheets)
+    if args.percent:
+        if not args.percent == 100:
+            merged = filter_min_row(merged, float(args.percent)/100.0)
+    elif args.absolute:
+            merged = filter_min_row(merged, args.absolute,absolute=True)
     merged.to_csv(args.output)
 
 if __name__ == "__main__":
