@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("-C","--convert",nargs="*",help="organism name to convert gene symbols to")
     parser.add_argument("-t","--tissue",nargs="*",help="filter by tissue")
     parser.add_argument("-p","--species",nargs="*",help="filter by species")
+    parser.add_argument("-x","--excel", action="store_true", help="use this flag if the tables for each paper are excel files")
     parser.add_argument("--percent", default=1, help="fiter by minimum percent of papers that have the same gene")
     parser.add_argument("--absolute",help="filter by minimum number of papers that have the same gene")
     parser.add_argument("-o","--output",required=True,help="output file name")
@@ -45,8 +46,12 @@ def filter_sheets(master_sheet,column, values, operator=any):
     master_sheet = master_sheet[master_sheet.apply(filter_row, axis=1)]
     return master_sheet
 
-def add_sheet(index,prefix):
-    path = osp.join(prefix,str(index)+".xlsx")
+def add_sheet(index,prefix,use_excel):
+    if use_excel:
+        extension = ".xlsx"
+    else:
+        extension = ".csv"
+    path = osp.join(prefix,str(index)+extension)
     if osp.exists(path):
         try:
             return dataset(path,"Gene","logFC",title=osp.basename(path))
@@ -55,14 +60,14 @@ def add_sheet(index,prefix):
     else:
         return None
 
-def add_sheets(master_sheet,prefix):
+def add_sheets(master_sheet,prefix,use_excel):
     all_sheets = {}
     for i ,row in master_sheet.iterrows():
         specie = class_sheet_by_species(row)
         if not specie is None:
             if not specie in all_sheets.keys():
                 all_sheets[specie] = []
-            sheet = add_sheet(int(row['Index']),prefix)
+            sheet = add_sheet(int(row['Index']),prefix,use_excel)
             if not sheet is None:
                 all_sheets[specie].append(sheet)
     return all_sheets
@@ -163,11 +168,13 @@ def main():
     args = parse_args()
     master_sheet = pd.read_excel(args.master_sheet)
     master_sheet = filter_master_sheet(master_sheet,args)
-    all_sheets = add_sheets(master_sheet,args.excels_path)
+    all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
     if len(all_sheets.keys()) > 1:
         if not args.convert:
             sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
         all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
+    else:
+        all_sheets = list(all_sheets.values())[0]
     merged = merge_datasets(all_sheets)
     if args.percent:
         if not args.percent == 100:
