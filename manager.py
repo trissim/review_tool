@@ -16,9 +16,9 @@ class dataset:
         self.title = title
         self.pmid = pmid
         self.filters = filters
-        # t
 
         self.load_df()
+        #self.upper_gene_col()
         self.filter_data()
         self.drop_col()
         self.apply_cols()
@@ -59,6 +59,9 @@ class dataset:
             self.df = pd.read_excel(self.path, **self.pd_kwargs)
         else:
             self.df = pd.read_csv(self.path, **self.pd_kwargs)
+
+    def upper_gene_col(self):
+        self.df[self.gene_col] = self.df[self.gene_col].apply(lambda x: str(x).upper())
 
     def drop_col(self):
         # TODO: specify which columns to keep

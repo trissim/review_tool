@@ -1,4 +1,5 @@
 from manager import dataset, merge_datasets
+#import pudb
 import pandas as pd
 import argparse
 import math
@@ -91,9 +92,13 @@ def convert_all_sheets_to_species(all_sheets,target_species):
             converted_genes_entrezid = convert_genes_to_entrezids(all_genes,origin_species,target_species)
             entrezids_to_geneids = convert_entrezids_to_gene_ids(list(converted_genes_entrezid.values()))
             converted += convert_sheet_list_to_species(sheet_list,converted_genes_entrezid,entrezids_to_geneids)
+        else:
+            converted += sheet_list
+        print(len(converted))
     return converted
 
 def convert_entrezids_to_gene_ids(entrezids):
+    #results = mg.getgenes(entrezids,returnall=True)
     results = mg.getgenes(entrezids)
     entrezid_to_geneid = {}
     for result in results:
@@ -105,6 +110,8 @@ def convert_entrezids_to_gene_ids(entrezids):
 
 def convert_genes_to_entrezids(gene_names,origin_species,target_species):
     converted_genes_id = {}
+    #pu.db
+    #results = mg.querymany(gene_names,species=origin_species,fields="homologene",scopes="symbol",returnall=True)
     results = mg.querymany(gene_names,species=origin_species,fields="homologene",scopes="symbol")
     for result, gene_name in zip (results,gene_names):
         converted_id = None
@@ -121,17 +128,24 @@ def convert_genes_to_entrezids(gene_names,origin_species,target_species):
 
 
 def convert_sheet_list_to_species(sheets,converted_genes_to_entrezid,entrezids_to_geneids):
+    #pu.db
     converted_sheets = []
     for sheet in sheets:
         for i, row in sheet.df.iterrows():
             to_remove = []
-            entrezid = converted_genes_to_entrezid[row["Gene ID"]]
-            if entrezid is None or not entrezid in entrezids_to_geneids.keys():
+            entrezid = str(converted_genes_to_entrezid[row["Gene ID"]])
+#            if entrezid is None or not entrezid in entrezids_to_geneids.keys():
+            try:
+                if entrezid == "None":
+                    raise
+                sheet.df.loc[i, 'Gene'] = entrezids_to_geneids[entrezid]
+            except Exception:
                 print("missing",entrezid)
                 to_remove.append(i)
-            else:
-                converted_symbol = entrezids_to_geneids[entrezid]
-                sheet.df.loc[i, 'Gene'] = gene_name
+#            else:
+#                converted_symbol = entrezids_to_geneids[entrezid]
+#                sheet.df.loc[i, 'Gene'] = gene_name
+        #pu.db
         sheet.df = sheet.df.drop(to_remove)
         converted_sheets.append(sheet)
     return converted_sheets
@@ -169,12 +183,16 @@ def main():
     master_sheet = pd.read_excel(args.master_sheet)
     master_sheet = filter_master_sheet(master_sheet,args)
     all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
+    #pu.db
     if len(all_sheets.keys()) > 1:
         if not args.convert:
             sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
         all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
+    #    pu.db
     else:
+    #    pu.db
         all_sheets = list(all_sheets.values())[0]
+    #    pu.db
     merged = merge_datasets(all_sheets)
     if args.percent:
         if not args.percent == 100:

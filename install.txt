@@ -1,3 +1,4 @@
 openpyxl
 pandas
 xlsx2csv
+mygene
