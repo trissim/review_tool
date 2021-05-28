@@ -18,7 +18,7 @@ class dataset:
         self.filters = filters
 
         self.load_df()
-        #self.upper_gene_col()
+        self.upper_gene_col()
         self.filter_data()
         self.drop_col()
         self.apply_cols()
@@ -94,9 +94,11 @@ class dataset:
 def merge_datasets(datasets):
     merged = pd.merge(
         left=datasets[0].df, right=datasets[1].df,
-        left_on="Gene ID", right_on="Gene ID",how="outer")
+        left_on=["Gene ID", "Original Gene ID"], right_on=["Gene ID","Original Gene ID"],how="outer")
+            #left_on="Gene ID", right_on="Gene ID",how="outer")
     for i in range(2, len(datasets), 1):
         merged = pd.merge(
             left=merged, right= datasets[i].df,
-            left_on="Gene ID", right_on="Gene ID",how="outer")
+            left_on=["Gene ID", "Original Gene ID"], right_on=["Gene ID","Original Gene ID"],how="outer")
+            #left_on="Gene ID", right_on="Gene ID",how="outer")
     return merged

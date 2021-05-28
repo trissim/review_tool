@@ -1,14 +1,37 @@
 from manager import dataset, merge_datasets
-#import pudb
 import pandas as pd
 import argparse
 import math
 import os.path as osp
 import mygene
 import sys
+from pyorthomap import FindOrthologs
 
 mg = mygene.MyGeneInfo()
 species_id = {"human":9606,"rat":10116, "mouse":10090}
+#species_ensembl_name = { "human": {
+#                                   'from_dataset' : 'hsapiens_gene_ensembl',
+#                                   'to_dataset' : 'mmusculus_gene_ensembl',
+#                                   'to_homolog_attribute' : 'mmusculus_homolog_ensembl_gene',
+#                                   'from_gene_id_name' : 'human_ensembl_gene_id',
+#                                   'to_gene_id_name' : 'mouse_ensembl_gene_id'
+#                                   },
+#                       "rat": {
+#                                   'from_dataset' : 'rnorvegicus_gene_ensembl',
+#                                   'to_dataset' : 'rnorvegicus_gene_ensembl',
+#                                   'to_homolog_attribute' : 'rnorvegicus_homolog_ensembl_gene',
+#                                   'from_gene_id_name' : 'rnorvegicus_ensembl_gene_id',
+#                                   'to_gene_id_name' : 'rnorvegicus_ensembl_gene_id'
+#                                   },
+#                       "mouse": {
+#                                   'from_dataset' : 'mmusculus_gene_ensembl',
+#                                   'to_dataset' : 'mmusculus_gene_ensembl',
+#                                   'to_homolog_attribute' : 'mmusculus_homolog_ensembl_gene',
+#                                   'from_gene_id_name' : 'hun_ensembl_gene_id',
+#                                   'to_gene_id_name' : 'mouse_ensembl_gene_id'
+#                                   }
+#                       }
+#"mouse":10090}
 converted_genes_id = {"human":{},"rat":{},"mouse":{}}
 
 def parse_args():
@@ -22,8 +45,9 @@ def parse_args():
     parser.add_argument("-t","--tissue",nargs="*",help="filter by tissue")
     parser.add_argument("-p","--species",nargs="*",help="filter by species")
     parser.add_argument("-x","--excel", action="store_true", help="use this flag if the tables for each paper are excel files")
-    parser.add_argument("--percent", default=1, help="fiter by minimum percent of papers that have the same gene")
-    parser.add_argument("--absolute",help="filter by minimum number of papers that have the same gene")
+    parser.add_argument("--percent", type=int, help="fiter by minimum percent of papers that have the same gene")
+    parser.add_argument("--absolute",type=int, help="filter by minimum number of papers that have the same gene")
+    parser.add_argument("-u","--unique_papers", action="store_true", help="count multiple sheets from the same paper as one sheet")
     parser.add_argument("-o","--output",required=True,help="output file name")
     return parser.parse_args()
 
@@ -82,20 +106,26 @@ def class_sheet_by_species(master_sheet_row):
     return None
 
 def convert_all_sheets_to_species(all_sheets,target_species):
-    converted = []
+    conversion_dict = {}
+    final_sheets=[]
     for origin_species,sheet_list in all_sheets.items():
         if not target_species == origin_species:
             all_genes = []
             for sheet in sheet_list:
                 all_genes+=(sheet.df['Gene ID'].tolist())
+            all_genes = [str(gene) for gene in all_genes]
             all_genes = set(all_genes)
-            converted_genes_entrezid = convert_genes_to_entrezids(all_genes,origin_species,target_species)
-            entrezids_to_geneids = convert_entrezids_to_gene_ids(list(converted_genes_entrezid.values()))
-            converted += convert_sheet_list_to_species(sheet_list,converted_genes_entrezid,entrezids_to_geneids)
+    #       converted = {**conversion_dict, **convert_gene_name(origin_species, target_species, all_genes)}
+            ortholog_dict = convert_gene_name(origin_species, target_species, all_genes)
+            final_sheets += convert_sheet_list_to_species(sheet_list,ortholog_dict)
+
+#            converted_genes_entrezid = convert_genes_to_entrezids(all_genes,origin_species,target_species)
+#            entrezids_to_geneids = convert_entrezids_to_gene_ids(list(converted_genes_entrezid.values()))
+#            converted += convert_sheet_list_to_species(sheet_list,converted_genes_entrezid,entrezids_to_geneids)
         else:
-            converted += sheet_list
-        print(len(converted))
-    return converted
+            final_sheets += sheet_list
+        #print(len(converted))
+    return final_sheets
 
 def convert_entrezids_to_gene_ids(entrezids):
     #results = mg.getgenes(entrezids,returnall=True)
@@ -110,7 +140,6 @@ def convert_entrezids_to_gene_ids(entrezids):
 
 def convert_genes_to_entrezids(gene_names,origin_species,target_species):
     converted_genes_id = {}
-    #pu.db
     #results = mg.querymany(gene_names,species=origin_species,fields="homologene",scopes="symbol",returnall=True)
     results = mg.querymany(gene_names,species=origin_species,fields="homologene",scopes="symbol")
     for result, gene_name in zip (results,gene_names):
@@ -127,50 +156,138 @@ def convert_genes_to_entrezids(gene_names,origin_species,target_species):
     return converted_genes_id
 
 
-def convert_sheet_list_to_species(sheets,converted_genes_to_entrezid,entrezids_to_geneids):
-    #pu.db
+def convert_sheet_list_to_species(sheets,ortholog_dict):
     converted_sheets = []
     for sheet in sheets:
+        to_remove = []
+        #sheet.df.insert(0, 'Original Gene ID', sheet.df['Gene ID'])
         for i, row in sheet.df.iterrows():
-            to_remove = []
-            entrezid = str(converted_genes_to_entrezid[row["Gene ID"]])
-#            if entrezid is None or not entrezid in entrezids_to_geneids.keys():
-            try:
-                if entrezid == "None":
-                    raise
-                sheet.df.loc[i, 'Gene'] = entrezids_to_geneids[entrezid]
-            except Exception:
-                print("missing",entrezid)
+            if row['Gene ID'] in ortholog_dict.keys():
+                sheet.df.loc[i, 'Gene ID'] = ortholog_dict[row['Gene ID']]
+            else:
                 to_remove.append(i)
-#            else:
-#                converted_symbol = entrezids_to_geneids[entrezid]
-#                sheet.df.loc[i, 'Gene'] = gene_name
-        #pu.db
         sheet.df = sheet.df.drop(to_remove)
         converted_sheets.append(sheet)
     return converted_sheets
 
-def convert_gene_name(gene_name,origin_species,target_species):
-        hits = results['hits']
-        if len(hits) > 0:
-            if 'homologene' in hits:
-                homologues = hits[0]['homologene']['genes']
-            else: return None
-        else: return None
-        homologues = [tup for tup in homologues if tup[0] == species_id[target_species]]
-        if len(homologues) > 0:
-            return mg.getgene(homologues[0][1])['symbol']
-        else: return None
+#def convert_sheet_list_to_species(sheets,converted_genes_to_entrezid,entrezids_to_geneids):
+#   converted_sheets = []
+#   for sheet in sheets:
+#       for i, row in sheet.df.iterrows():
+#           to_remove = []
+#           entrezid = str(converted_genes_to_entrezid[row["Gene ID"]])
+##           if entrezid is None or not entrezid in entrezids_to_geneids.keys():
+#           try:
+#               if entrezid == "None":
+#                   raise
+#               sheet.df.loc[i, 'Gene'] = entrezids_to_geneids[entrezid]
+#           except Exception:
+#               #print("missing",entrezid)
+#               to_remove.append(i)
+##           else:
+##               converted_symbol = entrezids_to_geneids[entrezid]
+##               sheet.df.loc[i, 'Gene'] = gene_name
+#       sheet.df = sheet.df.drop(to_remove)
+#       converted_sheets.append(sheet)
+#   return converted_sheets
+
+#def convert_gene_name(gene_name,origin_species,target_species):
+#        hits = results['hits']
+#        if len(hits) > 0:
+#            if 'homologene' in hits:
+#                homologues = hits[0]['homologene']['genes']
+#            else: return None
+#        else: return None
+#        homologues = [tup for tup in homologues if tup[0] == species_id[target_species]]
+#        if len(homologues) > 0:
+#            return mg.getgene(homologues[0][1])['symbol']
+#        else: return None
+
+#orthologsbiomart way
+def convert_gene_name(origin_species,target_species, *gene_names):
+
+    def hs2mm(genes):
+        searcher = FindOrthologs(
+        host = 'http://www.ensembl.org',
+        mart = 'ENSEMBL_MART_ENSEMBL',
+        from_dataset = 'hsapiens_gene_ensembl',
+        to_dataset = 'mmusculus_gene_ensembl',
+        from_filters = 'hgnc_symbol',
+        from_values = genes,
+        to_attributes = ['external_gene_name'],
+        to_homolog_attribute = 'mmusculus_homolog_ensembl_gene',
+        from_gene_id_name = 'human_ensembl_gene_id',
+        to_gene_id_name = 'mouse_ensembl_gene_id'
+        )
+        return searcher.map()
+
+    def mm2hs(genes):
+        searcher = FindOrthologs(
+        host = 'http://www.ensembl.org',
+        mart = 'ENSEMBL_MART_ENSEMBL',
+        from_dataset = 'mmusculus_gene_ensembl',
+        to_dataset = 'hsapiens_gene_ensembl',
+        from_filters = 'hgnc_symbol',
+        from_values = genes,
+        to_attributes = ['hgnc_symbol'],
+        to_homolog_attribute = 'hsapiens_homolog_ensembl_gene',
+        from_gene_id_name = 'mouse_ensembl_gene_id',
+        to_gene_id_name = 'human_ensembl_gene_id'
+        )
+        return searcher.map()
+
+    gene_names = list(gene_names[0])
+    if origin_species  == "human" and  target_species  == "mouse":
+        orthologs = hs2mm(gene_names)
+
+
+    if origin_species  == "mouse" and  target_species  == "human":
+        orthologs = mm2hs(gene_names)
+        print(orthologs)
+
+    mapped = {}
+    orthologs = orthologs[orthologs['external_gene_name'].notna()]
+    for i,r in orthologs.iterrows():
+        mapped[str(r['external_gene_name']).upper()]=r['hgnc_symbol']
+
+    return mapped
 
 def num_percent_common(series):
-    total = len(series)-1
-    remain = len(series.dropna())-1
+    total = len(series)-2
+    remain = len(series.dropna())-2 #original gene ID and gene ID excluded
     return remain, float(remain)/float(total)
 
-def filter_min_row(final_csv,min_val,absolute=False):
+def get_unique_papers(master_sheet):
+    num_papers=len(set(master_sheet["DOI"]))
+    index_to_doi = {}
+    for i, row in master_sheet.iterrows():
+        if not pd.isna(row['Index']):
+            index_to_doi[str(int(row['Index']))] = row["DOI"]
+    return num_papers, index_to_doi
+
+def num_percent_paper(series,num_papers, index_to_doi):
+    series = series.dropna()
+    indexes = list(series.keys())
+    def contains_digit(string):
+        for c in string:
+            if c.isdigit():
+                return True
+        return False
+    indexes = ["".join(c for c in index if c.isdigit()) for index in indexes if contains_digit(index)]
+    papers = len({index_to_doi[index] for index in indexes})
+    #remain = len(series.dropna())-2 #original gene ID and gene ID excluded
+
+    return papers, float(papers)/float(num_papers)
+
+def filter_min_row(final_csv,min_val,master_sheet,absolute=False,unique_papers=False):
     to_remove = []
+    if unique_papers:
+        num_papers, index_to_doi = get_unique_papers(master_sheet)
     for i, row in final_csv.iterrows():
-        remain, percent = num_percent_common(row)
+        if unique_papers:
+            remain, percent = num_percent_paper(row, num_papers, index_to_doi)
+        else:
+            remain, percent = num_percent_common(row)
         if absolute:
             if not min_val <= remain: to_remove.append(i)
         else:
@@ -178,27 +295,37 @@ def filter_min_row(final_csv,min_val,absolute=False):
     final_csv = final_csv.drop(to_remove)
     return final_csv
 
+def backup_original_gene_id(all_sheets):
+    for k,sheets in all_sheets.items():
+        for sheet in sheets:
+            sheet.df.insert(0, 'Original Gene ID', sheet.df['Gene ID'])
+    return all_sheets
+
 def main():
     args = parse_args()
+    print("reading master sheet")
     master_sheet = pd.read_excel(args.master_sheet)
+    print("filtering master sheet")
     master_sheet = filter_master_sheet(master_sheet,args)
     all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
-    #pu.db
     if len(all_sheets.keys()) > 1:
         if not args.convert:
             sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
+        print("converting gene symbols")
+        all_sheets = backup_original_gene_id(all_sheets)
         all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
-    #    pu.db
     else:
-    #    pu.db
         all_sheets = list(all_sheets.values())[0]
-    #    pu.db
+    print("merging datasets")
     merged = merge_datasets(all_sheets)
+    merged.drop(merged.loc[merged['Gene ID']=='NAN'].index, inplace=True)
+    print("filtering merged dataset")
     if args.percent:
         if not args.percent == 100:
-            merged = filter_min_row(merged, float(args.percent)/100.0)
+            merged = filter_min_row(merged,float(args.percent)/100.0, master_sheet, unique_papers=args.unique_papers)
     elif args.absolute:
-            merged = filter_min_row(merged, args.absolute,absolute=True)
+        merged = filter_min_row(merged, args.absolute, master_sheet, absolute=True, unique_papers=args.unique_papers)
+    print("writing csv")
     merged.to_csv(args.output)
 
 if __name__ == "__main__":
