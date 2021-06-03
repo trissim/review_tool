@@ -54,9 +54,9 @@ class dataset:
         else:
             return df[index]
 
-    def load_df(self,ext="csv"):
+    def load_df(self):
         if self.path.endswith(".xlsx"):
-            self.df = pd.read_excel(self.path, **self.pd_kwargs)
+            self.df = pd.read_excel(self.path, **self.pd_kwargs,engine="openpyxl")
         else:
             self.df = pd.read_csv(self.path, **self.pd_kwargs)
 

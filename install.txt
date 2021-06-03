@@ -1,5 +1,4 @@
 openpyxl
 pandas
 xlsx2csv
-mygene
 git+https://github.com/vitkl/orthologsBioMART.git

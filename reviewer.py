@@ -3,12 +3,12 @@ import pandas as pd
 import argparse
 import math
 import os.path as osp
-import mygene
+#import mygene
 import sys
 from pyorthomap import FindOrthologs
 
-mg = mygene.MyGeneInfo()
-species_id = {"human":9606,"rat":10116, "mouse":10090}
+#mg = mygene.MyGeneInfo()
+#species_id = {"human":9606,"rat":10116, "mouse":10090}
 #species_ensembl_name = { "human": {
 #                                   'from_dataset' : 'hsapiens_gene_ensembl',
 #                                   'to_dataset' : 'mmusculus_gene_ensembl',
