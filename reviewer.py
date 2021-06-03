@@ -304,7 +304,7 @@ def backup_original_gene_id(all_sheets):
 def main():
     args = parse_args()
     print("reading master sheet")
-    master_sheet = pd.read_excel(args.master_sheet)
+    master_sheet = pd.read_excel(args.master_sheet,engine="openpyxl")
     print("filtering master sheet")
     master_sheet = filter_master_sheet(master_sheet,args)
     all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
