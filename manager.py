@@ -20,6 +20,7 @@ class dataset:
         self.load_df()
         self.upper_gene_col()
         self.filter_data()
+        self.filters = None
         self.drop_col()
         self.apply_cols()
         self.rename_cols()

@@ -4,6 +4,7 @@ import argparse
 import math
 import os.path as osp
 #import mygene
+import pickle
 import sys
 from pyorthomap import FindOrthologs
 
@@ -49,6 +50,8 @@ def parse_args():
     parser.add_argument("--absolute",type=int, help="filter by minimum number of papers that have the same gene")
     parser.add_argument("-u","--unique_papers", action="store_true", help="count multiple sheets from the same paper as one sheet")
     parser.add_argument("-o","--output",required=True,help="output file name")
+    parser.add_argument("--save_conversion_cache",type=str,help="save conversion of all gene names to file")
+    parser.add_argument("--load_conversion_cache",type=str,help="load conversion of all gene names from file")
     return parser.parse_args()
 
 def filter_master_sheet(master_sheet,args):
@@ -301,21 +304,47 @@ def backup_original_gene_id(all_sheets):
             sheet.df.insert(0, 'Original Gene ID', sheet.df['Gene ID'])
     return all_sheets
 
+def all_sheets_index_filter(all_sheets,indices):
+    filtered_all_sheets = []
+    for index in indices:
+        index = int(index)
+        for sheet in all_sheets:
+            sheet_index = int(''.join(filter(str.isdigit, sheet.title)))
+            if sheet_index == index:
+                filtered_all_sheets.append(sheet)
+                break
+    return filtered_all_sheets
+
+
 def main():
     args = parse_args()
     print("reading master sheet")
     master_sheet = pd.read_excel(args.master_sheet,engine="openpyxl")
     print("filtering master sheet")
     master_sheet = filter_master_sheet(master_sheet,args)
-    all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
-    if len(all_sheets.keys()) > 1:
-        if not args.convert:
-            sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
-        print("converting gene symbols")
-        all_sheets = backup_original_gene_id(all_sheets)
+    if args.save_conversion_cache:
+        print("Saving conversion")
+        all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
+    #    all_sheets = backup_original_gene_id(all_sheets)
         all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
+        pickle.dump(all_sheets, open(  args.save_conversion_cache, "wb" ) )
+        exit()
+
+    if args.load_conversion_cache:
+        all_sheets = pickle.load(open( args.load_conversion_cache, "rb" ) )
+        keep_indices = list(master_sheet["Index"].dropna())
+        all_sheets = all_sheets_index_filter(all_sheets, keep_indices)
     else:
-        all_sheets = list(all_sheets.values())[0]
+        all_sheets = add_sheets(master_sheet,args.excels_path,args.excel)
+        if len(all_sheets.keys()) > 1:
+            if not args.convert:
+                sys.exit("More than one species detected.\nSpecify species to convert to using --convert")
+            print("converting gene symbols")
+            #all_sheets = backup_original_gene_id(all_sheets)
+            all_sheets = convert_all_sheets_to_species(all_sheets,args.convert[0])
+        else:
+            all_sheets = list(all_sheets.values())[0]
+
     print("merging datasets")
     merged = merge_datasets(all_sheets)
     merged.drop(merged.loc[merged['Gene ID']=='NAN'].index, inplace=True)
